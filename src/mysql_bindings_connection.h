@@ -1,12 +1,12 @@
-/*
-Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
-See contributors list in README
+/*!
+ * Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
+ * See contributors list in README
+ *
+ * See license text in LICENSE file
+ */
 
-See license text in LICENSE file
-*/
-
-#ifndef NODE_MYSQL_CONNECTION_H  // NOLINT
-#define NODE_MYSQL_CONNECTION_H
+#ifndef SRC_MYSQL_BINDINGS_CONNECTION_H_
+#define SRC_MYSQL_BINDINGS_CONNECTION_H_
 
 #include <mysql.h>
 
@@ -20,75 +20,28 @@ See license text in LICENSE file
 #include <cstdlib>
 #include <cstring>
 
-#define ADD_PROTOTYPE_METHOD(class, name, method) \
-class ## _ ## name ## _symbol = NODE_PSYMBOL(#name); \
-NODE_SET_PROTOTYPE_METHOD(constructor_template, #name, method);
+#include "./mysql_bindings.h"
 
-// Only for fixing some cpplint.py errors:
-// Lines should be <= 80 characters long
-// [whitespace/line_length] [2]
-// Lines should very rarely be longer than 100 characters
-// [whitespace/line_length] [4]
-#define V8EXC(str) Exception::Error(String::New(str))
-#define THREXC(str) ThrowException(Exception::Error(String::New(str)))
-#define THRTYPEEXC(str) ThrowException(Exception::TypeError(String::New(str)))
-#define OBJUNWRAP ObjectWrap::Unwrap
-#define V8STR(str) String::New(str)
-
-#define REQ_INT_ARG(I, VAR) \
-if (args.Length() <= (I) || !args[I]->IsInt32()) \
-return ThrowException(Exception::TypeError( \
-String::New("Argument " #I " must be an integer"))); \
-int32_t VAR = args[I]->Int32Value();
-
-#define REQ_UINT_ARG(I, VAR) \
-if (args.Length() <= (I) || !args[I]->IsUint32()) \
-return ThrowException(Exception::TypeError( \
-String::New("Argument " #I " must be an integer"))); \
-uint32_t VAR = args[I]->Uint32Value();
-
-#define REQ_STR_ARG(I, VAR) \
-if (args.Length() <= (I) || !args[I]->IsString()) \
-return ThrowException(Exception::TypeError( \
-String::New("Argument " #I " must be a string"))); \
-String::Utf8Value VAR(args[I]->ToString());
-
-#define REQ_BOOL_ARG(I, VAR) \
-if (args.Length() <= (I) || !args[I]->IsBoolean()) \
-return ThrowException(Exception::TypeError( \
-String::New("Argument " #I " must be a boolean"))); \
-bool VAR = args[I]->BooleanValue();
-
-#define REQ_FUN_ARG(I, VAR) \
-if (args.Length() <= (I) || !args[I]->IsFunction()) \
-return ThrowException(Exception::TypeError( \
-String::New("Argument " #I " must be a function"))); \
-Local<Function> VAR = Local<Function>::Cast(args[I]);
-
-#define REQ_EXT_ARG(I, VAR) \
-if (args.Length() <= (I) || !args[I]->IsExternal()) \
-return ThrowException(Exception::TypeError( \
-String::New("Argument " #I " invalid"))); \
-Local<External> VAR = Local<External>::Cast(args[I]);
-
-#define MYSQLSYNC_DISABLE_MQ \
+#define MYSQLCONN_DISABLE_MQ \
 if (conn->multi_query) { \
     mysql_set_server_option(conn->_conn, MYSQL_OPTION_MULTI_STATEMENTS_OFF); \
     conn->multi_query = false; \
 }
 
-#define MYSQLSYNC_ENABLE_MQ \
+#define MYSQLCONN_ENABLE_MQ \
 if (!conn->multi_query) { \
     mysql_set_server_option(conn->_conn, MYSQL_OPTION_MULTI_STATEMENTS_ON); \
     conn->multi_query = true; \
 }
 
-#define MYSQL_NON_THREADSAFE_ERRORSTRING \
-    "Asynchronous functions works only with threadsafe libmysqlclient_r"
-
 #define MYSQLCONN_MUSTBE_CONNECTED \
-    if (!conn->_conn) { \
+    if (!conn->_conn || !conn->connected) { \
         return THREXC("Not connected"); \
+    }
+
+#define MYSQLCONN_MUSTBE_INITIALIZED \
+    if (!conn->_conn) { \
+        return THREXC("Not initialized"); \
     }
 
 using namespace v8; // NOLINT
@@ -109,6 +62,7 @@ static Persistent<String> connection_escapeSync_symbol;
 static Persistent<String> connection_fieldCountSync_symbol;
 static Persistent<String> connection_getCharsetSync_symbol;
 static Persistent<String> connection_getCharsetNameSync_symbol;
+static Persistent<String> connection_getClientInfoSync_symbol;
 static Persistent<String> connection_getInfoSync_symbol;
 static Persistent<String> connection_getInfoStringSync_symbol;
 static Persistent<String> connection_getWarningsSync_symbol;
@@ -142,32 +96,23 @@ class MysqlConnection : public node::EventEmitter {
 
     static void Init(Handle<Object> target);
 
-    struct MysqlConnectionInfo {
-        uint64_t client_version;
-        const char *client_info;
-        uint64_t server_version;
-        const char *server_info;
-        const char *host_info;
-        uint32_t proto_info;
-    };
-
     bool Connect(const char* hostname,
                  const char* user,
                  const char* password,
                  const char* dbname,
                  uint32_t port,
-                 const char* socket);
+                 const char* socket,
+                 uint64_t flags);
 
     bool RealConnect(const char* hostname,
                  const char* user,
                  const char* password,
                  const char* dbname,
                  uint32_t port,
-                 const char* socket);
+                 const char* socket,
+                 uint64_t flags);
 
     void Close();
-
-    MysqlConnectionInfo GetInfo();
 
   protected:
     MYSQL *_conn;
@@ -176,6 +121,7 @@ class MysqlConnection : public node::EventEmitter {
     pthread_mutex_t query_lock;
 
     bool multi_query;
+    my_bool opt_reconnect;
 
     unsigned int connect_errno;
     const char *connect_error;
@@ -210,12 +156,17 @@ class MysqlConnection : public node::EventEmitter {
     struct connect_request {
         Persistent<Function> callback;
         MysqlConnection *conn;
+
         String::Utf8Value *hostname;
         String::Utf8Value *user;
         String::Utf8Value *password;
         String::Utf8Value *dbname;
         uint32_t port;
         String::Utf8Value *socket;
+        uint64_t flags;
+
+        unsigned int errno;
+        const char *error;
     };
     static int EIO_After_Connect(eio_req *req);
     static int EIO_Connect(eio_req *req);
@@ -244,6 +195,8 @@ class MysqlConnection : public node::EventEmitter {
 
     static Handle<Value> GetCharsetNameSync(const Arguments& args);
 
+    static Handle<Value> GetClientInfoSync(const Arguments& args);
+
     static Handle<Value> GetInfoSync(const Arguments& args);
 
     static Handle<Value> GetInfoStringSync(const Arguments& args);
@@ -266,11 +219,17 @@ class MysqlConnection : public node::EventEmitter {
 
 #ifndef MYSQL_NON_THREADSAFE
     struct query_request {
-        Persistent<Function> callback;
+        Persistent<Value> callback;
         MysqlConnection *conn;
+
         char *query;
         MYSQL_RES *my_result;
         uint32_t field_count;
+        my_ulonglong affected_rows;
+        my_ulonglong insert_id;
+
+        unsigned int errno;
+        const char *error;
     };
     static int EIO_After_Query(eio_req *req);
     static int EIO_Query(eio_req *req);
@@ -308,5 +267,5 @@ class MysqlConnection : public node::EventEmitter {
     static Handle<Value> WarningCountSync(const Arguments& args);
 };
 
-#endif  // NODE_MYSQL_CONNECTION_H  // NOLINT
+#endif  // SRC_MYSQL_BINDINGS_CONNECTION_H_
 

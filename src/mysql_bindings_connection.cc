@@ -35,19 +35,57 @@ void MysqlConnection::Init(Handle<Object> target) {
     Local<ObjectTemplate> instance_template =
         constructor_template->InstanceTemplate();
 
-    // Constants
+    // Constants for connect flags
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_COMPRESS);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_FOUND_ROWS);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_IGNORE_SIGPIPE);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_IGNORE_SPACE);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_INTERACTIVE);
+    // Not yet implemented
+    // NODE_DEFINE_CONSTANT(instance_template, CLIENT_LOCAL_FILES);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_MULTI_RESULTS);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_MULTI_STATEMENTS);
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_NO_SCHEMA);
+    // Unused by MySQL
+    // NODE_DEFINE_CONSTANT(instance_template, CLIENT_ODBC);
+    // This option should not be set by application programs;
+    // it is set internally in the client library. Instead,
+    // use setSslSync() before calling connect() or connectSync().
+    // NODE_DEFINE_CONSTANT(instance_template, CLIENT_SSL);
+    // Known issue: conn.CLIENT_REMEMBER_OPTIONS === -2147483648
+    NODE_DEFINE_CONSTANT(instance_template, CLIENT_REMEMBER_OPTIONS);
+
+    // Constants for setOption
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_INIT_COMMAND);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_COMPRESS);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_CONNECT_TIMEOUT);
-    NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_LOCAL_INFILE);
+    // Unused, embedded
+    // NODE_DEFINE_CONSTANT(MYSQL_OPT_GUESS_CONNECTION);
+    // Not yet implemented
+    // NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_LOCAL_INFILE);
+    // Unused, windows
+    // NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_NAMED_PIPE);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_PROTOCOL);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_READ_TIMEOUT);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_RECONNECT);
+    // Unused, embedded
+    // NODE_DEFINE_CONSTANT(MYSQL_SET_CLIENT_IP);
+    NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_SSL_VERIFY_SERVER_CERT);
+    // Unused, embedded
+    // NODE_DEFINE_CONSTANT(MYSQL_OPT_USE_EMBEDDED_CONNECTION);
+    // Unused, embedded
+    // NODE_DEFINE_CONSTANT(MYSQL_OPT_USE_REMOTE_CONNECTION);
+    // Unused by MySQL
+    // NODE_DEFINE_CONSTANT(MYSQL_OPT_USE_RESULT);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_OPT_WRITE_TIMEOUT);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_READ_DEFAULT_FILE);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_READ_DEFAULT_GROUP);
+    NODE_DEFINE_CONSTANT(instance_template, MYSQL_REPORT_DATA_TRUNCATION);
+    NODE_DEFINE_CONSTANT(instance_template, MYSQL_SECURE_AUTH);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_SET_CHARSET_DIR);
     NODE_DEFINE_CONSTANT(instance_template, MYSQL_SET_CHARSET_NAME);
+    // Unused, windows
+    // NODE_DEFINE_CONSTANT(instance_template, MYSQL_SHARED_MEMORY_BASE_NAME);
 
     // Properties
     instance_template->SetAccessor(V8STR("connectErrno"), ConnectErrnoGetter);
@@ -70,6 +108,7 @@ void MysqlConnection::Init(Handle<Object> target) {
     ADD_PROTOTYPE_METHOD(connection, fieldCountSync, FieldCountSync);
     ADD_PROTOTYPE_METHOD(connection, getCharsetSync, GetCharsetSync);
     ADD_PROTOTYPE_METHOD(connection, getCharsetNameSync, GetCharsetNameSync);
+    ADD_PROTOTYPE_METHOD(connection, getClientInfoSync, GetClientInfoSync);
     ADD_PROTOTYPE_METHOD(connection, getInfoSync, GetInfoSync);
     ADD_PROTOTYPE_METHOD(connection, getInfoStringSync, GetInfoStringSync);
     ADD_PROTOTYPE_METHOD(connection, getWarningsSync, GetWarningsSync);
@@ -108,38 +147,39 @@ bool MysqlConnection::Connect(const char* hostname,
                         const char* password,
                         const char* dbname,
                         uint32_t port,
-                        const char* socket) {
-    if (_conn) {
+                        const char* socket,
+                        uint64_t flags) {
+    if (this->_conn) {
         return false;
     }
 
-    _conn = mysql_init(NULL);
+    this->_conn = mysql_init(NULL);
 
-    if (!_conn) {
-        connected = false;
+    if (!this->_conn) {
+        this->connected = false;
         return false;
     }
 
-    bool unsuccessful = !mysql_real_connect(_conn,
+    bool unsuccessful = !mysql_real_connect(this->_conn,
                             hostname,
                             user,
                             password,
                             dbname,
                             port,
                             socket,
-                            0);
+                            flags);
 
     if (unsuccessful) {
-        connect_errno = mysql_errno(_conn);
-        connect_error = mysql_error(_conn);
+        this->connect_errno = mysql_errno(this->_conn);
+        this->connect_error = mysql_error(this->_conn);
 
-        mysql_close(_conn);
-        connected = false;
-        _conn = NULL;
+        mysql_close(this->_conn);
+        this->connected = false;
+        this->_conn = NULL;
         return false;
     }
 
-    connected = true;
+    this->connected = true;
     return true;
 }
 
@@ -148,62 +188,73 @@ bool MysqlConnection::RealConnect(const char* hostname,
                             const char* password,
                             const char* dbname,
                             uint32_t port,
-                            const char* socket) {
-    if (!_conn) {
+                            const char* socket,
+                            uint64_t flags) {
+    if (!this->_conn) {
         return false;
     }
 
-    if (connected) {
+    if (this->connected) {
         return false;
     }
 
-    bool unsuccessful = !mysql_real_connect(_conn,
+    bool unsuccessful = !mysql_real_connect(this->_conn,
                                             hostname,
                                             user,
                                             password,
                                             dbname,
                                             port,
                                             socket,
-                                            0);
+                                            flags);
 
     if (unsuccessful) {
-        connect_errno = mysql_errno(_conn);
-        connect_error = mysql_error(_conn);
+        this->connect_errno = mysql_errno(this->_conn);
+        this->connect_error = mysql_error(this->_conn);
 
-        mysql_close(_conn);
-        connected = false;
+        mysql_close(this->_conn);
+        this->_conn = NULL;
+        this->connected = false;
         return false;
     }
 
-    connected = true;
+    // MYSQL_OPT_RECONNECT option is modified by mysql_real_connect
+    // due to bug in MySQL < 5.1.6
+    // Save it state and repeat mysql_options after connect
+    // See issue #66
+#if MYSQL_VERSION_ID >= 50013 && MYSQL_VERSION_ID < 50106
+    unsuccessful = mysql_options(_conn, MYSQL_OPT_RECONNECT, opt_reconnect);
+    if (unsuccessful) {
+        this->connect_errno = mysql_errno(this->_conn);
+        this->connect_error = mysql_error(this->_conn);
+
+        mysql_close(this->_conn);
+        this->_conn = NULL;
+        this->connected = false;
+        return false;
+    }
+#endif
+
+    this->connected = true;
     return true;
 }
 
 void MysqlConnection::Close() {
     if (_conn) {
         mysql_close(_conn);
-        connected = false;
         _conn = NULL;
+        connected = false;
+        // multi_query = false;
+        opt_reconnect = false;
+        connect_errno = 0;
+        connect_error = NULL;
     }
-}
-
-MysqlConnection::MysqlConnectionInfo MysqlConnection::GetInfo() {
-    MysqlConnectionInfo info;
-
-    info.client_version = mysql_get_client_version();
-    info.client_info = mysql_get_client_info();
-    info.server_version = mysql_get_server_version(_conn);
-    info.server_info = mysql_get_server_info(_conn);
-    info.host_info = mysql_get_host_info(_conn);
-    info.proto_info = mysql_get_proto_info(_conn);
-
-    return info;
 }
 
 MysqlConnection::MysqlConnection(): EventEmitter() {
     _conn = NULL;
     connected = false;
     multi_query = false;
+    opt_reconnect = false;
     connect_errno = 0;
     connect_error = NULL;
     pthread_mutex_init(&query_lock, NULL);
@@ -373,9 +424,15 @@ int MysqlConnection::EIO_After_Connect(eio_req *req) {
     Local<Value> argv[1];
 
     if (req->result) {
-      argv[0] = Local<Value>::New(Integer::New(conn_req->conn->connect_errno));
+        int error_string_length = strlen(conn_req->conn->connect_error) + 25;
+        char* error_string = new char[error_string_length];
+        snprintf(error_string, error_string_length, "Connection error #%d: %s",
+               conn_req->errno, conn_req->error);
+
+        argv[0] = V8EXC(error_string);
+        delete[] error_string;
     } else {
-      argv[0] = Local<Value>::New(Null());
+        argv[0] = Local<Value>::New(Null());
     }
 
     TryCatch try_catch;
@@ -402,7 +459,13 @@ int MysqlConnection::EIO_Connect(eio_req *req) {
                     conn_req->password ? **(conn_req->password) : NULL,
                     conn_req->dbname ? **(conn_req->dbname) : NULL,
                     conn_req->port,
-                    conn_req->socket ? **(conn_req->socket) : NULL) ? 0 : 1;
+                    conn_req->socket ? **(conn_req->socket) : NULL,
+                    conn_req->flags) ? 0 : 1;
+
+    if (req->result) {
+        conn_req->errno = conn_req->conn->connect_errno;
+        conn_req->error = conn_req->conn->connect_error;
+    }
 
     delete conn_req->hostname;
     delete conn_req->user;
@@ -451,10 +514,12 @@ Handle<Value> MysqlConnection::Connect(const Arguments& args) {
         new String::Utf8Value(args[2]->ToString()) : NULL;
     conn_req->dbname = args.Length() > 4 && args[3]->IsString() ?
         new String::Utf8Value(args[3]->ToString()) : NULL;
-    conn_req->port = args.Length() > 5 ?
-                              args[4]->IntegerValue() : 0;
+    conn_req->port = args.Length() > 5 && args[4]->IsUint32() ?
+                            args[4]->Uint32Value() : 0;
     conn_req->socket = args.Length() > 6 && args[5]->IsString() ?
-      new String::Utf8Value(args[5]->ToString()) : NULL;
+        new String::Utf8Value(args[5]->ToString()) : NULL;
+    conn_req->flags = args.Length() > 7 && args[6]->IsUint32() ?
+                            args[6]->Uint32Value() : 0;
     eio_custom(EIO_Connect, EIO_PRI_DEFAULT, EIO_After_Connect, conn_req);
 
     ev_ref(EV_DEFAULT_UC);
@@ -480,47 +545,26 @@ Handle<Value> MysqlConnection::ConnectSync(const Arguments& args) {
 
     MysqlConnection *conn = OBJUNWRAP<MysqlConnection>(args.This());
 
+    if (conn->_conn) {
+        return THREXC("Already initialized. "
+                       "Use conn.realConnectSync() after conn.initSync()");
+    }
+
     String::Utf8Value hostname(args[0]->ToString());
     String::Utf8Value user(args[1]->ToString());
     String::Utf8Value password(args[2]->ToString());
     String::Utf8Value dbname(args[3]->ToString());
-    uint32_t port = args[4]->IntegerValue();
+    uint32_t port = args[4]->Uint32Value();
     String::Utf8Value socket(args[5]->ToString());
+    uint64_t flags = args[6]->Uint32Value();
 
-    bool r = conn->Connect(
-                    (
-                        args[0]->IsString() ?
-                        *hostname : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() ?
-                        *user : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() ?
-                        *password : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() &&
-                        args[3]->IsString() ?
-                        *dbname : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() &&
-                        args[3]->IsString() &&
-                        args[4]->IsString() ?
-                        port : 0),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() &&
-                        args[3]->IsString() &&
-                        args[4]->IsString() &&
-                        args[5]->IsString() ?
-                        *socket : NULL));
+    bool r = conn->Connect(args[0]->IsString() ? *hostname : NULL,
+                           args[1]->IsString() ? *user     : NULL,
+                           args[2]->IsString() ? *password : NULL,
+                           args[3]->IsString() ? *dbname   : NULL,
+                           args[4]->IsUint32() ? port      : 0,
+                           args[5]->IsString() ? *socket   : NULL,
+                           args[6]->IsUint32() ? flags     : 0);
 
     if (!r) {
         return scope.Close(False());
@@ -714,7 +758,25 @@ Handle<Value> MysqlConnection::GetCharsetNameSync(const Arguments& args) {
 }
 
 /**
- * Returns the MySQL client and server version and information
+ * Returns the MySQL client version and information
+ *
+ * @return {Object}
+ */
+Handle<Value> MysqlConnection::GetClientInfoSync(const Arguments& args) {
+    HandleScope scope;
+
+    Local<Object> js_result = Object::New();
+
+    js_result->Set(V8STR("client_info"),
+                   V8STR(mysql_get_client_info()));
+    js_result->Set(V8STR("client_version"),
+                   Integer::New(mysql_get_client_version()));
+
+    return scope.Close(js_result);
+}
+
+/**
+ * Returns the MySQL client, server, host and protocol version and information
  *
  * @return {Object}
  */
@@ -725,16 +787,20 @@ Handle<Value> MysqlConnection::GetInfoSync(const Arguments& args) {
 
     MYSQLCONN_MUSTBE_CONNECTED;
 
-    MysqlConnectionInfo info = conn->GetInfo();
-
     Local<Object> js_result = Object::New();
 
-    js_result->Set(V8STR("client_version"), Integer::New(info.client_version));
-    js_result->Set(V8STR("client_info"), V8STR(info.client_info));
-    js_result->Set(V8STR("server_version"), Integer::New(info.server_version));
-    js_result->Set(V8STR("server_info"), V8STR(info.server_info));
-    js_result->Set(V8STR("host_info"), V8STR(info.host_info));
-    js_result->Set(V8STR("proto_info"), Integer::New(info.proto_info));
+    js_result->Set(V8STR("client_info"),
+                   V8STR(mysql_get_client_info()));
+    js_result->Set(V8STR("client_version"),
+                   Integer::New(mysql_get_client_version()));
+    js_result->Set(V8STR("server_info"),
+                   V8STR(mysql_get_server_info(conn->_conn)));
+    js_result->Set(V8STR("server_version"),
+                   Integer::New(mysql_get_server_version(conn->_conn)));
+    js_result->Set(V8STR("host_info"),
+                   V8STR(mysql_get_host_info(conn->_conn)));
+    js_result->Set(V8STR("proto_info"),
+                   Integer::New(mysql_get_proto_info(conn->_conn)));
 
     return scope.Close(js_result);
 }
@@ -799,7 +865,6 @@ Handle<Value> MysqlConnection::GetWarningsSync(const Arguments& args) {
 /**
  * Initializes MysqlConnection
  *
- * @deprecated
  * @return {Boolean}
  */
 Handle<Value> MysqlConnection::InitSync(const Arguments& args) {
@@ -926,18 +991,19 @@ Handle<Value> MysqlConnection::MultiRealQuerySync(const Arguments& args) {
 
     MYSQLCONN_MUSTBE_CONNECTED;
 
-    MYSQLSYNC_ENABLE_MQ;
+    MYSQLCONN_ENABLE_MQ;
     if (mysql_real_query(conn->_conn, *query, query.length()) != 0) {
-        MYSQLSYNC_DISABLE_MQ;
+        MYSQLCONN_DISABLE_MQ;
         return scope.Close(False());
     }
-    MYSQLSYNC_DISABLE_MQ;
+    MYSQLCONN_DISABLE_MQ;
 
     return scope.Close(True());
 }
 
 /**
- * Pings a server connection, or tries to reconnect if the connection has gone down
+ * Pings a server connection,
+ * or tries to reconnect if the connection has gone down
  *
  * @return {Boolean}
  */
@@ -965,33 +1031,52 @@ int MysqlConnection::EIO_After_Query(eio_req *req) {
     struct query_request *query_req = (struct query_request *)(req->data);
 
     int argc = 1;
-    Local<Value> argv[2];
+    Local<Value> argv[3];
 
     if (req->result) {
-        argv[0] = V8EXC("Error on query execution");
+        int error_string_length = strlen(query_req->error) + 20;
+        char* error_string = new char[error_string_length];
+        snprintf(error_string, error_string_length, "Query error #%d: %s",
+                 query_req->errno, query_req->error);
+
+        argv[0] = V8EXC(error_string);
+        delete[] error_string;
     } else {
         if (req->int1) {
-            argv[0] = External::New(query_req->my_result);
-            argv[1] = Integer::New(query_req->field_count);
+            argv[0] = External::New(query_req->conn->_conn);
+            argv[1] = External::New(query_req->my_result);
+            argv[2] = Integer::New(query_req->field_count);
             Persistent<Object> js_result(MysqlResult::constructor_template->
-                                     GetFunction()->NewInstance(2, argv));
+                                     GetFunction()->NewInstance(3, argv));
 
             argv[1] = Local<Value>::New(scope.Close(js_result));
-            argc = 2;
+        } else {
+            Local<Object> js_result = Object::New();
+            js_result->Set(V8STR("affectedRows"),
+                           Integer::New(query_req->affected_rows));
+            js_result->Set(V8STR("insertId"),
+                           Integer::New(query_req->insert_id));
+            argv[1] = Local<Object>::New(scope.Close(js_result));
         }
+        argc = 2;
         argv[0] = Local<Value>::New(Null());
     }
 
-    TryCatch try_catch;
+    if (query_req->callback->IsFunction()) {
+        TryCatch try_catch;
 
-    query_req->callback->Call(Context::GetCurrent()->Global(), argc, argv);
+        Persistent<Function>::Cast(query_req->callback)->
+                              Call(Context::GetCurrent()->Global(), argc, argv);
 
-    if (try_catch.HasCaught()) {
-        node::FatalException(try_catch);
+        if (try_catch.HasCaught()) {
+            node::FatalException(try_catch);
+        }
+
+        query_req->callback.Dispose();
     }
 
-    query_req->callback.Dispose();
     query_req->conn->Unref();
+
     free(query_req->query);
     free(query_req);
 
@@ -1008,13 +1093,16 @@ int MysqlConnection::EIO_Query(eio_req *req) {
         return 0;
     }
 
-    MYSQLSYNC_DISABLE_MQ;
+    MYSQLCONN_DISABLE_MQ;
 
     pthread_mutex_lock(&conn->query_lock);
     int r = mysql_query(conn->_conn, query_req->query);
     if (r != 0) {
         // Query error
         req->result = 1;
+
+        query_req->errno = mysql_errno(conn->_conn);
+        query_req->error = mysql_error(conn->_conn);
     } else {
         req->result = 0;
 
@@ -1022,17 +1110,22 @@ int MysqlConnection::EIO_Query(eio_req *req) {
 
         query_req->field_count = mysql_field_count(conn->_conn);
 
-        if (!my_result) {
+        if (my_result) {
+            // Valid result set (may be empty, of cause)
+            req->int1 = 1;
+            query_req->my_result = my_result;
+        } else {
             if (query_req->field_count == 0) {
                 // No result set - not a SELECT, SHOW, DESCRIBE or EXPLAIN
+                // UPDATE or DELETE?
+                query_req->affected_rows = mysql_affected_rows(conn->_conn);
+                // INSERT?
+                query_req->insert_id = mysql_insert_id(conn->_conn);
                 req->int1 = 0;
             } else {
                 // Result store error
                 req->result = 1;
             }
-        } else {
-            req->int1 = 1;
-            query_req->my_result = my_result;
         }
     }
     pthread_mutex_unlock(&conn->query_lock);
@@ -1052,7 +1145,7 @@ Handle<Value> MysqlConnection::Query(const Arguments& args) {
     return THREXC(MYSQL_NON_THREADSAFE_ERRORSTRING);
 #else
     REQ_STR_ARG(0, query);
-    REQ_FUN_ARG(1, callback);
+    OPTIONAL_FUN_ARG(1, callback);
 
     MysqlConnection *conn = OBJUNWRAP<MysqlConnection>(args.This());
 
@@ -1075,7 +1168,7 @@ Handle<Value> MysqlConnection::Query(const Arguments& args) {
         return THREXC("Snprintf() error");
     }
 
-    query_req->callback = Persistent<Function>::New(callback);
+    query_req->callback = Persistent<Value>::New(callback);
     query_req->conn = conn;
 
     eio_custom(EIO_Query, EIO_PRI_DEFAULT, EIO_After_Query, query_req);
@@ -1102,7 +1195,8 @@ Handle<Value> MysqlConnection::QuerySync(const Arguments& args) {
 
     MYSQLCONN_MUSTBE_CONNECTED;
 
-    MYSQLSYNC_DISABLE_MQ;
+    MYSQLCONN_DISABLE_MQ;
+
     MYSQL_RES *my_result = NULL;
     int field_count;
 
@@ -1132,10 +1226,11 @@ Handle<Value> MysqlConnection::QuerySync(const Arguments& args) {
         }
     }
 
-    int argc = 2;
-    Local<Value> argv[2];
-    argv[0] = External::New(my_result);
-    argv[1] = Integer::New(field_count);
+    int argc = 3;
+    Local<Value> argv[argc];
+    argv[0] = External::New(conn->_conn);
+    argv[1] = External::New(my_result);
+    argv[2] = Integer::New(field_count);
     Persistent<Object> js_result(MysqlResult::constructor_template->
                              GetFunction()->NewInstance(argc, argv));
 
@@ -1177,49 +1272,23 @@ Handle<Value> MysqlConnection::RealConnectSync(const Arguments& args) {
 
     MysqlConnection *conn = OBJUNWRAP<MysqlConnection>(args.This());
 
-    MYSQLCONN_MUSTBE_CONNECTED;
+    MYSQLCONN_MUSTBE_INITIALIZED;
 
     String::Utf8Value hostname(args[0]->ToString());
     String::Utf8Value user(args[1]->ToString());
     String::Utf8Value password(args[2]->ToString());
     String::Utf8Value dbname(args[3]->ToString());
-    uint32_t port = args[4]->IntegerValue();
+    uint32_t port = args[4]->Uint32Value();
     String::Utf8Value socket(args[5]->ToString());
+    uint64_t flags = args[6]->Uint32Value();
 
-    bool r = conn->RealConnect(
-                    (
-                        args[0]->IsString() ?
-                        *hostname : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() ?
-                        *user : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() ?
-                        *password : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() &&
-                        args[3]->IsString() ?
-                        *dbname : NULL),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() &&
-                        args[3]->IsString() &&
-                        args[4]->IsString() ?
-                        port : 0),
-                    (
-                        args[0]->IsString() &&
-                        args[1]->IsString() &&
-                        args[2]->IsString() &&
-                        args[3]->IsString() &&
-                        args[4]->IsString() &&
-                        args[5]->IsString() ?
-                        *socket : NULL));
+    bool r = conn->RealConnect(args[0]->IsString() ? *hostname : NULL,
+                               args[1]->IsString() ? *user     : NULL,
+                               args[2]->IsString() ? *password : NULL,
+                               args[3]->IsString() ? *dbname   : NULL,
+                               args[4]->IsUint32() ? port      : 0,
+                               args[5]->IsString() ? *socket   : NULL,
+                               args[6]->IsUint32() ? flags     : 0);
 
     if (!r) {
         return scope.Close(False());
@@ -1243,8 +1312,7 @@ Handle<Value> MysqlConnection::RealQuerySync(const Arguments& args) {
 
     MYSQLCONN_MUSTBE_CONNECTED;
 
-    MYSQLSYNC_DISABLE_MQ;
-
+    MYSQLCONN_DISABLE_MQ;
 
     pthread_mutex_lock(&conn->query_lock);
     int r = mysql_real_query(conn->_conn, *query, query.length());
@@ -1319,12 +1387,14 @@ Handle<Value> MysqlConnection::SetOptionSync(const Arguments& args) {
 
     switch (option_key) {
         case MYSQL_OPT_CONNECT_TIMEOUT:
-        case MYSQL_OPT_LOCAL_INFILE:
         case MYSQL_OPT_PROTOCOL:
         case MYSQL_OPT_READ_TIMEOUT:
         case MYSQL_OPT_WRITE_TIMEOUT:
         case MYSQL_OPT_RECONNECT:
         case MYSQL_OPT_COMPRESS:
+        case MYSQL_OPT_SSL_VERIFY_SERVER_CERT:
+        case MYSQL_REPORT_DATA_TRUNCATION:
+        case MYSQL_SECURE_AUTH:
             {
             REQ_INT_ARG(1, option_integer_value);
             r = mysql_options(conn->_conn,
@@ -1332,6 +1402,15 @@ Handle<Value> MysqlConnection::SetOptionSync(const Arguments& args) {
                               static_cast<const char *>(
                                 static_cast<const void *>(
                                   &option_integer_value)));
+            // MYSQL_OPT_RECONNECT option is modified by mysql_real_connect
+            // due to bug in MySQL < 5.1.6
+            // Save it state and repeat mysql_options after connect
+            // See issue #66
+#if MYSQL_VERSION_ID >= 50013 && MYSQL_VERSION_ID < 50106
+            if (!r && (option_key == MYSQL_OPT_RECONNECT)) {
+                conn->opt_reconnect = option_integer_value;
+            }
+#endif
             }
             break;
         case MYSQL_READ_DEFAULT_FILE:
@@ -1344,8 +1423,22 @@ Handle<Value> MysqlConnection::SetOptionSync(const Arguments& args) {
             r = mysql_options(conn->_conn, option_key, *option_string_value);
             }
             break;
+        case MYSQL_OPT_LOCAL_INFILE:
+            return THREXC("This option isn't implemented yet");
+            break;
+        case MYSQL_OPT_NAMED_PIPE:
+        case MYSQL_SHARED_MEMORY_BASE_NAME:
+            return THREXC("This option isn't used because Windows");
+            break;
+        case MYSQL_OPT_GUESS_CONNECTION:
+        case MYSQL_SET_CLIENT_IP:
+        case MYSQL_OPT_USE_EMBEDDED_CONNECTION:
+        case MYSQL_OPT_USE_REMOTE_CONNECTION:
+            return THREXC("This option isn't used because not embedded");
+            break;
+        case MYSQL_OPT_USE_RESULT:
         default:
-            return THREXC("This option isn't supported");
+            return THREXC("This option isn't supported by MySQL");
     }
 
     if (r) {
@@ -1436,10 +1529,11 @@ Handle<Value> MysqlConnection::StoreResultSync(const Arguments& args) {
         return scope.Close(False());
     }
 
-    int argc = 2;
-    Local<Value> argv[2];
-    argv[0] = External::New(my_result);
-    argv[1] = Integer::New(mysql_field_count(conn->_conn));
+    int argc = 3;
+    Local<Value> argv[argc];
+    argv[0] = External::New(conn->_conn);
+    argv[1] = External::New(my_result);
+    argv[2] = Integer::New(mysql_field_count(conn->_conn));
     Persistent<Object> js_result(MysqlResult::constructor_template->
                              GetFunction()->NewInstance(argc, argv));
 
@@ -1499,10 +1593,11 @@ Handle<Value> MysqlConnection::UseResultSync(const Arguments& args) {
         return scope.Close(False());
     }
 
-    int argc = 2;
-    Local<Value> argv[2];
-    argv[0] = External::New(my_result);
-    argv[1] = Integer::New(mysql_field_count(conn->_conn));
+    int argc = 3;
+    Local<Value> argv[argc];
+    argv[0] = External::New(conn->_conn);
+    argv[1] = External::New(my_result);
+    argv[2] = Integer::New(mysql_field_count(conn->_conn));
     Persistent<Object> js_result(MysqlResult::constructor_template->
                              GetFunction()->NewInstance(argc, argv));
 

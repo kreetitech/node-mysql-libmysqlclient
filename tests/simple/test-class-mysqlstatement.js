@@ -1,5 +1,6 @@
 /*
-Copyright (C) 2010, Oleg Efimov <efimovov@gmail.com>
+Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
+See contributors list in README
 
 See license text in LICENSE file
 */
@@ -9,7 +10,6 @@ var cfg = require("../config").cfg;
 
 // Require modules
 var
-  sys = require("sys"),
   mysql_libmysqlclient = require("../../mysql-libmysqlclient"),
   mysql_bindings = require("../../mysql_bindings");
 

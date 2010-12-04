@@ -11,7 +11,7 @@ from os.path import exists
 
 srcdir = "."
 blddir = "build"
-VERSION = "1.0.3"
+VERSION = "1.1.0"
 
 def set_options(opt):
   opt.tool_options("compiler_cxx")
@@ -19,6 +19,7 @@ def set_options(opt):
   opt.add_option('--all', action='store_true', help='Run all tests (include slow, exclude ignored)')
   opt.add_option('--slow', action='store_true', help='Run slow tests')
   opt.add_option('--ignored', action='store_true', help='Run ignored tests')
+  opt.add_option('--debug', action='store_true', help='Run tests with node_g')
 
 def configure(conf):
   conf.check_tool("compiler_cxx")
@@ -50,31 +51,38 @@ def build(bld):
   obj.uselib = "MYSQLCLIENT"
 
 def test(tst):
+  node_binary = 'node'
+  if Options.options.debug:
+    node_binary = 'node_g'
+  
   if not exists('./tools/nodeunit/bin/nodeunit'):
     print("\033[31mNodeunit doesn't exists.\033[39m\nYou should run `git submodule update --init` before run tests.")
     exit(1)
   else:
     if Options.options.slow and Options.options.ignored:
-      Utils.exec_command('node_g ./tools/nodeunit/bin/nodeunit tests/slow tests/ignored')
+      Utils.exec_command(node_binary + ' ./tools/nodeunit/bin/nodeunit tests/slow tests/ignored')
     else:
       if Options.options.slow:
-        Utils.exec_command('node ./tools/nodeunit/bin/nodeunit tests/slow')
+        Utils.exec_command(node_binary + ' ./tools/nodeunit/bin/nodeunit tests/slow')
       else:
         if Options.options.ignored:
-          Utils.exec_command('node ./tools/nodeunit/bin/nodeunit tests/ignored')
+          Utils.exec_command(node_binary + ' ./tools/nodeunit/bin/nodeunit tests/ignored')
         else:
           if Options.options.all:
-            Utils.exec_command('node ./tools/nodeunit/bin/nodeunit tests/simple tests/complex tests/slow')
+            Utils.exec_command(node_binary + ' ./tools/nodeunit/bin/nodeunit tests/simple tests/complex tests/slow')
           else:
-            Utils.exec_command('node ./tools/nodeunit/bin/nodeunit tests/simple tests/complex')
+            Utils.exec_command(node_binary + ' ./tools/nodeunit/bin/nodeunit tests/simple tests/complex')
 
 def lint(lnt):
   # Bindings C++ source code
   print("Run CPPLint:")
   Utils.exec_command('cpplint ./src/*.h ./src/*.cc')
-  # Bindings javascript code, tools and tests
-  print("Run Nodeint:")
-  Utils.exec_command('nodelint ./package.json ./mysql-libmysqlclient.js ./docs/*.js ./tools/*.js ./tools/tests/*.js')
+  # Bindings javascript code, docs and tools
+  print("Run Nodelint for sources:")
+  Utils.exec_command('nodelint ./package.json ./mysql-libmysqlclient.js ./doc ./tools/*.js')
+  # Bindings tests
+  print("Run Nodelint for tests:")
+  Utils.exec_command('nodelint ./tests')
 
 def doc(doc):
   description = ('--desc "MySQL bindings for [Node.js](http://nodejs.org) using libmysqlclient.\n\n' +
@@ -83,7 +91,7 @@ def doc(doc):
   ribbon = '--ribbon "http://github.com/Sannis/node-mysql-libmysqlclient" '
   
   downloads = ('--desc-rigth "' +
-               'Latest stable v' + VERSION + ':<br/>\n' +
+               'Latest version ' + VERSION + ':<br/>\n' +
                '<a href="http://github.com/Sannis/node-mysql-libmysqlclient/zipball/v' + VERSION + '">\n' +
                ' <img width="90" src="http://github.com/images/modules/download/zip.png" />\n' +
                '</a>\n' +

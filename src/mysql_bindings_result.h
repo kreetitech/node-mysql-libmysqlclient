@@ -1,9 +1,9 @@
-/*
-Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
-See contributors list in README
-
-See license text in LICENSE file
-*/
+/*!
+ * Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
+ * See contributors list in README
+ *
+ * See license text in LICENSE file
+ */
 
 #ifndef SRC_MYSQL_BINDINGS_RESULT_H_
 #define SRC_MYSQL_BINDINGS_RESULT_H_
@@ -13,6 +13,8 @@ See license text in LICENSE file
 #include <v8.h>
 #include <node.h>
 #include <node_events.h>
+
+#include "./mysql_bindings.h"
 
 #define mysql_result_is_unbuffered(r) \
 ((r)->handle && (r)->handle->status == MYSQL_STATUS_USE_RESULT)
@@ -51,14 +53,18 @@ class MysqlResult : public node::EventEmitter {
     void Free();
 
   protected:
+    MYSQL *_conn;
     MYSQL_RES *_res;
 
     uint32_t field_count;
 
     MysqlResult();
 
-    explicit MysqlResult(MYSQL_RES *my_result, uint32_t my_field_count):
+    explicit MysqlResult(MYSQL *my_connection,
+                          MYSQL_RES *my_result,
+                          uint32_t my_field_count):
                                                 EventEmitter(),
+                                                _conn(my_connection),
                                                 _res(my_result),
                                                 field_count(my_field_count) {}
 
@@ -81,10 +87,11 @@ class MysqlResult : public node::EventEmitter {
     struct fetchAll_request {
         Persistent<Function> callback;
         MysqlResult *res;
-        
+
         MYSQL_FIELD *fields;
         uint32_t num_fields;
         bool results_array;
+        bool results_structured;
     };
     static int EIO_After_FetchAll(eio_req *req);
     static int EIO_FetchAll(eio_req *req);

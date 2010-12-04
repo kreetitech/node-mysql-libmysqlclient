@@ -1,5 +1,6 @@
 /*
-Copyright (C) 2010, Oleg Efimov <efimovov@gmail.com>
+Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
+See contributors list in README
 
 See license text in LICENSE file
 */
@@ -9,20 +10,32 @@ var cfg = require("../config").cfg;
 
 // Require modules
 var
-  sys = require("sys"),
   mysql_libmysqlclient = require("../../mysql-libmysqlclient"),
   mysql_bindings = require("../../mysql_bindings");
 
 var initAndRealConnectSync = function (test) {
-  test.expect(2);
+  test.expect(5);
   
   var conn = mysql_libmysqlclient.createConnectionSync();
   
+  // Test right code
   conn.initSync();
   test.ok(!conn.connectedSync(), "conn.connectedSync() after conn.initSync()");
   conn.realConnectSync(cfg.host, cfg.user, cfg.password);
   test.ok(conn.connectedSync(), "conn.connectedSync() after conn.realConnectSync()");
   conn.closeSync();
+  
+  // Test code without init
+  test.throws(function () {
+    conn.realConnectSync(cfg.host, cfg.user, cfg.password);
+  }, Error, "Not initialized");
+  
+  // Test other wrong code
+  conn.initSync();
+  test.ok(!conn.connectedSync(), "conn.connectedSync() after conn.initSync()");
+  test.throws(function () {
+    conn.connectSync(cfg.host, cfg.user, cfg.password);
+  }, Error, "Not initialized");
   
   test.done();
 };
@@ -98,15 +111,41 @@ exports.New = function (test) {
   test.done();
 };
 
-exports.OptionsConstants = function (test) {
-  test.expect(12);
+exports.ConnectFlagsConstants = function (test) {
+  test.expect(9);
+  
+  var conn = mysql_libmysqlclient.createConnectionSync();
+  
+  test.equals(conn.CLIENT_COMPRESS, 32);
+  test.equals(conn.CLIENT_FOUND_ROWS, 2);
+  test.equals(conn.CLIENT_IGNORE_SIGPIPE, 4096);
+  test.equals(conn.CLIENT_IGNORE_SPACE, 256);
+  test.equals(conn.CLIENT_INTERACTIVE, 1024);
+  // Not yet implemented
+  // test.equals(conn.CLIENT_LOCAL_FILES, 128);
+  test.equals(conn.CLIENT_MULTI_RESULTS, 131072);
+  test.equals(conn.CLIENT_MULTI_STATEMENTS, 65536);
+  test.equals(conn.CLIENT_NO_SCHEMA, 16);
+  // Known issue: conn.CLIENT_REMEMBER_OPTIONS === -2147483648
+  test.equals(conn.CLIENT_REMEMBER_OPTIONS, -2147483648);
+  
+  conn.connectSync(cfg.host, cfg.user, cfg.password, cfg.database, null, null, conn.CLIENT_REMEMBER_OPTIONS);
+  conn.closeSync();
+  
+  
+  test.done();
+};
+
+exports.SetOptionsConstants = function (test) {
+  test.expect(11);
   
   var conn = mysql_libmysqlclient.createConnectionSync();
   
   test.equals(conn.MYSQL_INIT_COMMAND, 3);
   test.equals(conn.MYSQL_OPT_COMPRESS, 1);
   test.equals(conn.MYSQL_OPT_CONNECT_TIMEOUT, 0);
-  test.equals(conn.MYSQL_OPT_LOCAL_INFILE, 8);
+  // Not yet implemented
+  // test.equals(conn.MYSQL_OPT_LOCAL_INFILE, 8);
   test.equals(conn.MYSQL_OPT_PROTOCOL, 9);
   test.equals(conn.MYSQL_OPT_READ_TIMEOUT, 11);
   test.equals(conn.MYSQL_OPT_RECONNECT, 20);
@@ -205,34 +244,6 @@ exports.ChangeUserSync = function (test) {
   test.done();
 };
 
-exports.Connect = function (test) {
-  test.expect(1);
-  
-  var conn = new mysql_bindings.MysqlConnection();
-  
-  conn.connect(cfg.host, cfg.user, cfg.password, cfg.database, function (error) {
-    test.ok(error === null, "conn.connect() for allowed database");
-    conn.closeSync();
-    
-    test.done();
-  });
-};
-
-exports.ConnectWithError = function (test) {
-  test.expect(3);
-  
-  var conn = new mysql_bindings.MysqlConnection();
-  
-  conn.connect(cfg.host, cfg.user, cfg.password, cfg.database_denied, function (error) {
-    test.ok(error === 1044, "conn.connect() to denied database");
-    
-    test.equals(conn.connectErrno, 1044, "conn.connectErrno");
-    test.ok(conn.connectError.match(new RegExp("Access denied for user '(" + cfg.user + "|)'@'.*' to database '" + cfg.database_denied + "'")), "conn.connectError");
-    
-    test.done();
-  });
-};
-
 exports.ConnectSync = function (test) {
   test.expect(2);
   
@@ -274,7 +285,7 @@ exports.CloseSync = function (test) {
   
   test.throws(function () {
     conn.closeSync();
-  }, "conn.closeSync() with closed connection");
+  }, Error, "Not connected");
   
   test.done();
 };
@@ -409,6 +420,21 @@ exports.GetCharsetNameSync = function (test) {
   test.done();
 };
 
+exports.GetClientInfoSync = function (test) {
+  test.expect(2);
+  
+  var
+    conn = mysql_libmysqlclient.createConnectionSync(),
+    client_info;
+  
+  client_info = conn.getClientInfoSync();
+  
+  test.ok(client_info.client_info, "conn.getClientInfoSync().client_info");
+  test.ok(client_info.client_version, "conn.getClientInfoSync().client_version");
+  
+  test.done();
+};
+
 exports.GetInfoSync = function (test) {
   test.expect(2);
   
@@ -457,7 +483,7 @@ exports.InitSync = function (test) {
 };
 
 exports.LastInsertIdSync = function (test) {
-  test.expect(6);
+  test.expect(5);
   
   var conn = mysql_libmysqlclient.createConnectionSync(cfg.host, cfg.user, cfg.password, cfg.database),
     res = true,
@@ -468,10 +494,10 @@ exports.LastInsertIdSync = function (test) {
   test.ok(conn, "mysql_libmysqlclient.createConnectionSync(host, user, password, database)");
   
   res = conn.querySync("DELETE FROM " + cfg.test_table + ";");
-  test.ok(res, "conn.querySync('DELETE FROM cfg.test_table')");
+  test.ok(res, "conn.querySync('DELETE FROM test_table')");
   
-  res = conn.querySync("ALTER TABLE " + cfg.test_table + " ADD id BIGINT AUTO_INCREMENT, ADD INDEX (id);");
-  test.ok(res, "conn.querySync('ALTER TABLE cfg.test_table ADD id BIGINT AUTO_INCREMENT, ADD INDEX (id)')");
+  res = conn.querySync("ALTER TABLE " + cfg.test_table + " AUTO_INCREMENT = 1;");
+  test.ok(res, "conn.querySync('ALTER TABLE test_table AUTO_INCREMENT = 1;')");
   
   for (i = 0; i < cfg.insert_rows_count; i += 1) {
     random_number = Math.round(Math.random() * 1000000);
@@ -484,9 +510,6 @@ exports.LastInsertIdSync = function (test) {
   test.equals(res, true, "Insert " + cfg.insert_rows_count + " rows into table " + cfg.test_table);
   last_insert_id = conn.lastInsertIdSync();
   test.equals(last_insert_id, cfg.insert_rows_count, "conn.lastInsertIdSync()");
-  
-  res = conn.querySync("ALTER TABLE " + cfg.test_table + " DROP id;");
-  test.ok(res, "conn.querySync('ALTER TABLE cfg.test_table  DROP id')");
   
   conn.closeSync();
   
@@ -503,41 +526,6 @@ exports.MultiNextResultSync = function (test) {
 
 exports.MultiRealQuerySync = function (test) {
   multiRealQueryAndNextAndMoreSync(test);
-};
-
-exports.Query = function (test) {
-  test.expect(3);
-  
-  var
-    conn = mysql_libmysqlclient.createConnectionSync(cfg.host, cfg.user, cfg.password, cfg.database),
-    res;
-  test.ok(conn, "mysql_libmysqlclient.createConnectionSync(host, user, password, database)");
-  
-  conn.query("SHOW TABLES", function (err, result) {
-    test.ok(result.fieldCount === 1, "show results field count === 1");
-    var res = result.fetchAllSync();
-    test.ok(res.some(function (r) {
-      return r['Tables_in_' + cfg.database] === cfg.test_table;
-    }), "find the test table in results");
-    conn.closeSync();
-    test.done();
-  });
-};
-
-exports.QueryWithError = function (test) {
-  test.expect(3);
-  
-  var
-    conn = mysql_libmysqlclient.createConnectionSync(cfg.host, cfg.user, cfg.password, cfg.database),
-    res;
-  test.ok(conn, "mysql_libmysqlclient.createConnectionSync(host, user, password, database)");
-  
-  conn.query("SHOW TABLESaagh", function (err, result) {
-    test.ok(err, "Error object is present");
-    test.ok(!result, "Result is not defined");
-    conn.closeSync();
-    test.done();
-  });
 };
 
 exports.QueryWithQuerySync = function (test) {

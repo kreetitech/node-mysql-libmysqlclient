@@ -1,5 +1,6 @@
 /*
-Copyright (C) 2010, Oleg Efimov <efimovov@gmail.com>
+Copyright by Oleg Efimov and node-mysql-libmysqlclient contributors
+See contributors list in README
 
 See license text in LICENSE file
 */
@@ -9,7 +10,6 @@ var cfg = require("../config").cfg;
 
 // Require modules
 var
-  sys = require("sys"),
   mysql_libmysqlclient = require("../../mysql-libmysqlclient"),
   mysql_bindings = require("../../mysql_bindings");
 
@@ -106,45 +106,6 @@ exports.DataSeekSync = function (test) {
   conn.closeSync();
   
   test.done();
-};
-
-exports.FetchAll = function (test) {
-  test.expect(4);
-  
-  var conn = mysql_libmysqlclient.createConnectionSync(cfg.host, cfg.user, cfg.password, cfg.database),
-    res;
-  test.ok(conn, "mysql_libmysqlclient.createConnectionSync(host, user, password, database)");
-  
-  res = conn.querySync("SHOW TABLES;");
-  test.ok(res, "conn.querySync('SHOW TABLES;')");
-  
-  res.fetchAll(function (err, tables) {
-    test.ok(err === null, "res.fetchAll() err===null");
-    test.ok(tables, "res.fetchAll() result");
-    conn.closeSync();
-    
-    test.done();
-  });
-};
-
-exports.FetchAllWithArrayOption = function (test) {
-  test.expect(5);
-  
-  var conn = mysql_libmysqlclient.createConnectionSync(cfg.host, cfg.user, cfg.password, cfg.database),
-    res;
-  test.ok(conn, "mysql_libmysqlclient.createConnectionSync(host, user, password, database)");
-  
-  res = conn.querySync("SHOW TABLES;");
-  test.ok(res, "conn.querySync('SHOW TABLES;')");
-  
-  res.fetchAll(true,function (err, tables) {
-    test.ok(err === null, "res.fetchAll() err===null");
-    test.ok(tables, "res.fetchAll() result");
-    test.ok(Array.isArray(tables[0]), "Result returns an array of array");
-    conn.closeSync();
-    
-    test.done();
-  });
 };
 
 exports.FetchAllSync = function (test) {

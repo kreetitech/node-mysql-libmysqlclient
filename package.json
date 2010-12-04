@@ -1,7 +1,7 @@
 { "name" : "mysql-libmysqlclient"
 , "description" : "Binary MySQL bindings for Node.JS"
 , "homepage" : "http://sannis.github.com/node-mysql-libmysqlclient"
-, "version" : "1.0.3"
+, "version" : "1.1.0"
 , "maintainers" :
   [ { "name": "Oleg Efimov"
     , "email": "efimovov@gmail.com"
@@ -26,6 +26,12 @@
   , { "name": "Maurits Lamers"
     , "email": "maurits@weidestraat.nl"
     }
+  , { "name": "Benjmain Reesman"
+    , "email": "ben.reesman@gmail.com"
+    }
+  , { "name": "Pavel Ponomarenko"
+    , "email": "shocksilien@gmail.com"
+    }
   ]
 , "bugs" : { "web" : "http://github.com/Sannis/node-mysql-libmysqlclient/issues" }
 , "licenses" : [ { "type" : "MIT" } ]
@@ -40,5 +46,5 @@
   , "test" : "node-waf test"
   , "doc" : "node-waf doc"
   }
-, "engines" : { "node" : ">=0.2.3" }
+, "engines" : { "node" : ">=0.2.5" }
 }
